@@ -746,8 +746,7 @@ def main():
         print("| 1. Fuelling - 2. Inputs - 3. Outputs - 4. Settings - 5. Faults - 6. Map     |")
         print("-------------------------------------------------------------------------------")
         print("Select menu item (1-6), or q to quit:")
-        if(menu_code==0):
-            sel = input("> ").strip().lower()
+        sel = input("> ").strip().lower()
         if sel == "q":
             print("Exiting.")
             if ser:
@@ -837,7 +836,7 @@ def main():
 
             if ser:
                 ser.close()
-            # input("\nPress Enter to return to menu...")
+            input("\nPress Enter to return to menu...")
 
         elif menu_code == 2:
             # Show inputs
