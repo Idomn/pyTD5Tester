@@ -650,48 +650,65 @@ def get_setting():
 
 
 def get_inputs():
+    # global br1,br2,clutch,xfer,ccm,ccr,ccsa,accr,acfr
+    # response=send_packet(b"\x02\x21\x1e",6)
+    # byte1=response[3]
+    # byte2=response[4]
+    # if byte2 & 0b01000000 != 0:
+    #     xfer=1
+    # else:
+    #     xfer=0
+    # if byte1 & 0b1 != 0:
+    #     br2=1
+    # else:
+    #     br2=0
+    # if byte2 & 0b10000000 != 0:
+    #     br1=1
+    # else:
+    #     br1=0
+    # if byte1 & 0b00000010 != 0:
+    #     clutch=1
+    # else:
+    #     clutch=0
+    # if byte1 & 0b00000100 != 0:
+    #     ccm=1
+    # else:
+    #     ccm=0
+    # if byte1 & 0b00010000 != 0:
+    #     ccr=1
+    # else:
+    #     ccr=0
+    # if byte1 & 0b00001000 != 0:
+    #     ccsa=1
+    # else:
+    #     ccsa=0
+    # if byte2 & 0b00001000 != 0:
+    #     accr=1
+    # else:
+    #     accr=0
+    # if byte2 & 0b00000100 != 0:
+    #     acfr=1
+    # else:
+    #     acfr=0
+    # return br1,br2,clutch,xfer,ccm,ccr,ccsa,accr,acfr
     global br1,br2,clutch,xfer,ccm,ccr,ccsa,accr,acfr
-    response=send_packet(b"\x02\x21\x1e",6)
-    byte1=response[3]
-    byte2=response[4]
-    if byte2 & 0b01000000 != 0:
-        xfer=1
-    else:
-        xfer=0
-    if byte1 & 0b1 != 0:
-        br2=1
-    else:
-        br2=0
-    if byte2 & 0b10000000 != 0:
-        br1=1
-    else:
-        br1=0
-    if byte1 & 0b00000010 != 0:
-        clutch=1
-    else:
-        clutch=0
-    if byte1 & 0b00000100 != 0:
-        ccm=1
-    else:
-        ccm=0
-    if byte1 & 0b00010000 != 0:
-        ccr=1
-    else:
-        ccr=0
-    if byte1 & 0b00001000 != 0:
-        ccsa=1
-    else:
-        ccsa=0
-    if byte2 & 0b00001000 != 0:
-        accr=1
-    else:
-        accr=0
-    if byte2 & 0b00000100 != 0:
-        acfr=1
-    else:
-        acfr=0
-    return br1,br2,clutch,xfer,ccm,ccr,ccsa,accr,acfr
-
+    response = send_packet(b"\x02\x21\x1e", 6)
+    if len(response) < 5:
+        # Not enough data, set all to 0 or some error value
+        br1 = br2 = clutch = xfer = ccm = ccr = ccsa = accr = acfr = 0
+        return br1, br2, clutch, xfer, ccm, ccr, ccsa, accr, acfr
+    byte1 = response[3]
+    byte2 = response[4]
+    xfer = 1 if (byte2 & 0b01000000) else 0
+    br2 = 1 if (byte1 & 0b1) else 0
+    br1 = 1 if (byte2 & 0b10000000) else 0
+    clutch = 1 if (byte1 & 0b00000010) else 0
+    ccm = 1 if (byte1 & 0b00000100) else 0
+    ccr = 1 if (byte1 & 0b00010000) else 0
+    ccsa = 1 if (byte1 & 0b00001000) else 0
+    accr = 1 if (byte2 & 0b00001000) else 0
+    acfr = 1 if (byte2 & 0b00000100) else 0
+    return br1, br2, clutch, xfer, ccm, ccr, ccsa, accr, acfr
 # For clarity, only the main menu loop is rewritten below. Paste your full data acquisition functions here!
 
 # --- Main menu loop ---
@@ -729,7 +746,8 @@ def main():
         print("| 1. Fuelling - 2. Inputs - 3. Outputs - 4. Settings - 5. Faults - 6. Map     |")
         print("-------------------------------------------------------------------------------")
         print("Select menu item (1-6), or q to quit:")
-        sel = input("> ").strip().lower()
+        if(menu_code==0):
+            sel = input("> ").strip().lower()
         if sel == "q":
             print("Exiting.")
             if ser:
@@ -817,10 +835,10 @@ def main():
                 current_mode=1
 
 
-
-            input("\nPress Enter to return to menu...")
             if ser:
                 ser.close()
+            # input("\nPress Enter to return to menu...")
+
         elif menu_code == 2:
             # Show inputs
             initialize()
@@ -847,8 +865,8 @@ def main():
 
 
             input("\nPress Enter to return to menu...")
-                if ser:
-                    ser.close()
+            if ser:
+                ser.close()
         elif menu_code == 3:
             # Outputs
             initialize()
