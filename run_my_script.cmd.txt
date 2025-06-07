@@ -1,0 +1,5 @@
+@echo off
+
+
+python "C:\Users\Ido\OneDrive - post.bgu.ac.il\מסמכים\GitHub\pyTD5Tester\main_menu_Version2.py"
+pause

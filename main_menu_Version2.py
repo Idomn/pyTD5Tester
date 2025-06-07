@@ -9,6 +9,8 @@ from math import *
 import os
 import sys
 import binascii
+import msvcrt
+import select
 
 from pyftdi.serialext import serial_for_url
 from pyftdi.ftdi import Ftdi
@@ -480,10 +482,10 @@ def get_temps():
         # t_fuel=0
         i=0
     else:
-        t_coolant=float(response[3]*256+response[4])/10-273.2
-        t_air=float(response[7]*256+response[8])/10-273.2
-        t_ext=float(response[11]*256+response[12])/10-273.2
-        t_fuel=float(response[15]*256+response[16])/10-273.2
+        t_coolant=y = round(float(response[3]*256+response[4])/10-273.2, 2)
+        t_air=round(float(response[7]*256+response[8])/10-273.2, 2)
+        t_ext=round(float(response[11]*256+response[12])/10-273.2, 2)
+        t_fuel=round((response[15]*256+response[16])/10-273.2, 2)
 
     return t_coolant, t_air, t_ext, t_fuel
 
@@ -541,19 +543,37 @@ def get_pressures():
 
     return ap1, ap2
 
+# /def get_faults():
+#
+#     global debug
+#     global fault_list
+#     fault_list=[]
+#     response=send_packet(b"\x02\x21\x3b",39)
+#     for i in range(0,36):
+#         for j in range(0,8):
+#             if ord(response[i+3]) & int(pow(2,int(j))) != 0:
+#                 fault_list.append(int(i)*8+int(j))
+#
+#     return fault_list
 def get_faults():
-
     global debug
     global fault_list
-    fault_list=[]
-    response=send_packet(b"\x02\x21\x3b",39)
-    for i in range(0,36):
-        for j in range(0,8):
-            if ord(response[i+3]) & int(pow(2,int(j))) != 0:
+    fault_list = []
+    response = send_packet(b"\x02\x21\x3b", 39)
+
+
+    while len(response) < 39:
+        # Not enough data received, return empty list or error
+        print(f"DEBUG: get_faults response too short: {len(response)} bytes: {response}")
+        response = send_packet(b"\x02\x21\x3b", 39)
+        # return fault_list
+    print(f": {len(response)} bytes: {response}")
+    for i in range(0, 36):
+        for j in range(0, 7):
+            # if response[i+3] & int(pow(2, int(j))) != 0:
+            if response[i+3] & (1 << j) != 0:
                 fault_list.append(int(i)*8+int(j))
-
     return fault_list
-
 
 def get_power_balance():
     global pb1, pb2, pb3, pb4, pb5
@@ -709,7 +729,145 @@ def get_inputs():
     accr = 1 if (byte2 & 0b00001000) else 0
     acfr = 1 if (byte2 & 0b00000100) else 0
     return br1, br2, clutch, xfer, ccm, ccr, ccsa, accr, acfr
+
+def mgph_to_lph(mg_per_h, density_kg_per_l=0.832):
+    # צפיפות ב-mg/L
+    rho_mg_per_l = density_kg_per_l * 1e6
+    return round(mg_per_h / rho_mg_per_l,2)
+
 # For clarity, only the main menu loop is rewritten below. Paste your full data acquisition functions here!
+def show_fuelling_screen():
+    while True:
+        # Fetch all your parameters
+        initialize()
+        b_voltage = get_bvolt()
+        rpm = get_rpm()
+        rpm_error = get_rpm_error()
+        speed = get_speed()
+        t_coolant, t_air, t_ext, t_fuel = get_temps()
+        p1, p2, p3, p4, supply = get_throttle()
+        aap, maf = get_aap_maf()
+        ap1, ap2 = get_pressures()
+        pb1,pb2,pb3,pb4,pb5=get_power_balance()
+        fu1,fu2,fu3,fu4,fu5,fu6,fu7,fu8=get_fu()
+
+        # Clear screen and print everything
+        os.system("cls" if os.name == "nt" else "clear")
+        print("-------------------------------------------------------------------------------")
+        print("|                Land Rover Td5 Engine Testing Program                   |")
+        print("-------------------------------------------------------------------------------")
+        print("|                                                                             |")
+        print("| FTDI Port: %s" % FTDI_URL)
+        print("|                                                                             |")
+        # You can print info read from ECU here (map_variant, VIN, etc.)
+        print("-------------------------------------------------------------------------------")
+
+        print("Fuelling Parameters")
+        print("------------------")
+        print(f"\t Battery Voltage: {b_voltage} Volt")
+        print(f"\t RPM: {rpm}")
+        print("\t RPM Error: ", str(rpm_error))
+        print("\t Speed: ", str(speed), " KMH")
+        print("\t Coolant Temp: ", str(t_coolant), " C")
+        print("\t Air Temp: ", str(t_air), " C")
+        print("\t External Temp: ", str(t_ext), " C")
+        print("\t Fuel Temp: ", str(t_fuel), " C")
+        if p4==-1:
+            print("\t Accelerator - P1 P2 Supply (Volt): ", str(p1), " ", str(p2)," ", str(supply))
+        else:
+            print("\t Accelerator - P1 P2 P3 Supply (Volt): ", str(p1), " ", str(p2), " ", str(p3)," ", str(supply))
+        print("\t Manifold Pressure: ", str(aap), " Bar")
+        print("\t Air Mass Mater: ", str(maf))
+        print("\t External Pressure:", str(ap1), " Bar")
+        print("\t Turbo Pressure (calculated):", str(aap-ap1), " Bar")
+        print("\t Cylinders: ", str(pb1), " ", str(pb2), " ", str(pb3), " ", str(pb4), " ", str(pb5))
+        print("\t EGR Modulation: N/A")
+        print("\t EGR Inlet: N/A")
+        print("\t Wastegate Modulation: N/A")
+        print("\t -------------------------")
+        print("\t Extras: ")
+        if p4==-1:
+            print("\t Driver pedal demand: ",p3," %")
+        else:
+            print("\t Driver pedal demand: ",p4," %")
+        print("\t Driver fuel demand: ",fu1," mg/stroke")
+        print("\t Idle fuel demand: ",fu8," mg/stroke")
+        print("\t Air Intake: ",fu3," mg/stroke")
+        print("\t Map Solution A/F: ",fu6," mg/stroke")
+        print("\t Torque Limiter: ",fu7," mg/stroke")
+        print("\t Injected fuel: ",fu4," mg/stroke")
+        print("\t Consumption (Calculated): ",mgph_to_lph(fu4*rpm*(5/2)*60/1000000) ,"L/Hour")
+        print("\t Consumption (Calculated): ",speed/mgph_to_lph(fu4*rpm*(5/2)*60/1000000),"L/Hour")
+        try:
+            afratio=fu3/fu4
+            print("\t A/F Ratio (Calculated): ",afratio)
+        except:
+            print("\t A/F Ratio (Calculated): inf")
+
+        # Check for Enter key without blocking
+        print("\nPress [Enter] to return to menu, or wait to refresh.")
+        if sys.platform == "win32":
+            if msvcrt.kbhit() and msvcrt.getch() == b'\r':
+                break
+        else:
+
+            print("Refreshing in 1 second...", end='\r')
+            i, o, e = select.select([sys.stdin], [], [], 1)
+            if i:
+                sys.stdin.readline()
+                break
+        time.sleep(1)
+    try:
+        pass
+    except KeyboardInterrupt:
+        pass  # allow Ctrl+C to return to menu
+
+def show_inputs():
+    try:
+        while True:
+            # Fetch all your parameters
+            initialize()
+            # Show inputs
+
+            br1,br2,clutch,xfer,ccm,ccr,ccsa,accr,acfr=get_inputs()
+            time.sleep(0.1)
+            os.system("cls" if os.name == "nt" else "clear")
+            print("-------------------------------------------------------------------------------")
+            print("|                Land Rover Td5  Engine Testing Program                   |")
+            print("-------------------------------------------------------------------------------")
+            print("|                                                                             |")
+            print("| FTDI Port: %s" % FTDI_URL)
+            print("|                                                                             |")
+            # You can print info read from ECU here (map_variant, VIN, etc.)
+            print("-------------------------------------------------------------------------------")
+
+
+            print("| Inputs                                                                      |")
+            print("|-----------------------------------------------------------------------------|")
+            print("\t Brake 1, Brake 2: ", str(br1), " ", str(br2))
+            print("\t Clutch: ", str(clutch))
+            print("\t Transfer: ", str(xfer))
+            print("\t Gear Box: N/A Yet")
+            print("\t Cruise Control Main, Resume, Set/Accelerate: ", str(ccm), " ", str(ccr), " ", str(ccsa))
+            print("\t A/C Clutch Req: ", str(accr))
+            print("\t A/C Fan Req:  ", str(acfr))
+
+
+            print("\nPress [Enter] to return to menu, or wait to refresh.")
+    # Check for Enter key without blocking
+            if sys.platform == "win32":
+                if msvcrt.kbhit() and msvcrt.getch() == b'\r':
+                    break
+            else:
+
+                print("Refreshing in 1 second...", end='\r')
+                i, o, e = select.select([sys.stdin], [], [], 1)
+                if i:
+                    sys.stdin.readline()
+                    break
+            time.sleep(1)
+    except KeyboardInterrupt:
+        pass  # allow Ctrl+C to return to menu
 
 # --- Main menu loop ---
 
@@ -736,7 +894,7 @@ def main():
     while True:
         os.system("cls" if os.name == "nt" else "clear")
         print("-------------------------------------------------------------------------------")
-        print("|                Land Rover Td5 Motorren Azterketa Programa                   |")
+        print("|                Land Rover Td5 Engine Testing Program                   |")
         print("-------------------------------------------------------------------------------")
         print("|                                                                             |")
         print("| FTDI Port: %s" % FTDI_URL)
@@ -758,235 +916,306 @@ def main():
             continue
 
         if menu_code == 1:
-            # Example: show fuelling parameters
-            initialize()
-            # Replace these calls with your actual get_* functions
-            # b_voltage = get_bvolt()
-            # rpm = get_rpm()
-            # ... etc ...
-            b_voltage=get_bvolt()
-            rpm=get_rpm()
+            show_fuelling_screen()
+        # if menu_code == 1:
+        #     # Example: show fuelling parameters
+        #     initialize()
+        #     # Replace these calls with your actual get_* functions
+        #     # b_voltage = get_bvolt()
+        #     # rpm = get_rpm()
+        #     # ... etc ...
+        #     b_voltage=get_bvolt()
+        #     rpm=get_rpm()
+        #
+        #     rpm_error=get_rpm_error()
+        #     speed=get_speed()
+        #     t_coolant, t_air, t_ext, t_fuel =get_temps()
+        #     p1, p2, p3, p4, supply = get_throttle()
+        #     aap, maf = get_aap_maf()
+        #     ap1, ap2 = get_pressures()
+        #     pb1,pb2,pb3,pb4,pb5=get_power_balance()
+        #     fu1,fu2,fu3,fu4,fu5,fu6,fu7,fu8=get_fu()
+        #
+        #
+        #
+        #     print("| Fuelling Parameters                                                         |")
+        #     print("|-----------------------------------------------------------------------------|")
+        #     print("\t Battery Voltage: ", str(b_voltage), " Volt")
+        #     print("\t RPM: ", str(rpm))
+        #     print("\t RPM Error: ", str(rpm_error))
+        #     print("\t Speed: ", str(speed), " KMH")
+        #     print("\t Coolant Temp: ", str(t_coolant), " C")
+        #     print("\t Air Temp: ", str(t_air), " C")
+        #     print("\t External Temp: ", str(t_ext), " C")
+        #     print("\t Fuel Temp: ", str(t_fuel), " C")
+        #     if p4==-1:
+        #         print("\t Accelerator - P1 P2 Supply (Volt): ", str(p1), " ", str(p2)," ", str(supply))
+        #     else:
+        #         print("\t Accelerator - P1 P2 P3 Supply (Volt): ", str(p1), " ", str(p2), " ", str(p3)," ", str(supply))
+        #     print("\t Manifold Pressure: ", str(aap), " Bar")
+        #     print("\t Air Mass Mater: ", str(maf))
+        #     print("\t External Pressure:", str(ap1), " Bar")
+        #     print("\t Turbo Pressure (calculated):", str(aap-ap1), " Bar")
+        #     print("\t Cylinders: ", str(pb1), " ", str(pb2), " ", str(pb3), " ", str(pb4), " ", str(pb5))
+        #     print("\t EGR Modulation: N/A")
+        #     print("\t EGR Inlet: N/A")
+        #     print("\t Wastegate Modulation: N/A")
+        #     print("\t -------------------------")
+        #     print("\t Extras: ")
+        #     if p4==-1:
+        #         print("\t Driver pedal demand: ",p3," %")
+        #     else:
+        #         print("\t Driver pedal demand: ",p4," %")
+        #     print("\t Driver fuel demand: ",fu1," mg/stroke")
+        #     print("\t Idle fuel demand: ",fu8," mg/stroke")
+        #     print("\t Air Intake: ",fu3," mg/stroke")
+        #     print("\t Map Solution A/F: ",fu6," mg/stroke")
+        #     print("\t Torque Limiter: ",fu7," mg/stroke")
+        #     print("\t Injected fuel: ",fu4," mg/stroke")
+        #     print("\t Consumption (Calculated): ",fu4*rpm*(5/2)*60/1000000," kg/hora")
+        #     try:
+        #         afratio=fu3/fu4
+        #         print("\t A/F Ratio (Calculated): ",afratio)
+        #     except:
+        #         print("\t A/F Ratio (Calculated): inf")
+        #
+        #     # response=send_packet(b"\x02\x21\x1e",6)
+        #     # print "\n\n\tHex is: %s." % ":".join("{:02x}".format(ord(c)) for c in response)
+        #
+        #     # response=send_packet(b"\x02\x21\x36",6)
+        #     # print "\tHex is: %s." % ":".join("{:02x}".format(ord(c)) for c in response)
+        #
+        #     if (current_mode!=1):
+        #         if debug > 2:
+        #             print ("Logging in")
+        #         initialize()
+        #         time.sleep(0.1)
+        #         response=send_packet(b"\x02\x21\x20",15)             #Start Diagnostics
+        #         current_mode=1
+        #
+        #
+        #     if ser:
+        #         ser.close()
+        #     input("\nPress Enter to return to menu...")
 
-            rpm_error=get_rpm_error()
-            speed=get_speed()
-            t_coolant, t_air, t_ext, t_fuel =get_temps()
-            p1, p2, p3, p4, supply = get_throttle()
-            aap, maf = get_aap_maf()
-            ap1, ap2 = get_pressures()
-            pb1,pb2,pb3,pb4,pb5=get_power_balance()
-            fu1,fu2,fu3,fu4,fu5,fu6,fu7,fu8=get_fu()
-
-
-
-            print("| Fuelling Parameters                                                         |")
-            print("|-----------------------------------------------------------------------------|")
-            print("\t Battery Voltage: ", str(b_voltage), " Volt")
-            print("\t RPM: ", str(rpm))
-            print("\t RPM Error: ", str(rpm_error))
-            print("\t Speed: ", str(speed), " KMH")
-            print("\t Coolant Temp: ", str(t_coolant), " C")
-            print("\t Air Temp: ", str(t_air), " C")
-            print("\t External Temp: ", str(t_ext), " C")
-            print("\t Fuel Temp: ", str(t_fuel), " C")
-            if p4==-1:
-                print("\t Accelerator - P1 P2 Supply (Volt): ", str(p1), " ", str(p2)," ", str(supply))
-            else:
-                print("\t Accelerator - P1 P2 P3 Supply (Volt): ", str(p1), " ", str(p2), " ", str(p3)," ", str(supply))
-            print("\t Manifold Pressure: ", str(aap), " Bar")
-            print("\t Air Mass Mater: ", str(maf))
-            print("\t External Pressure:", str(ap1), " Bar")
-            print("\t Turbo Pressure (calculated):", str(aap-ap1), " Bar")
-            print("\t Cylinders: ", str(pb1), " ", str(pb2), " ", str(pb3), " ", str(pb4), " ", str(pb5))
-            print("\t EGR Modulation: N/A")
-            print("\t EGR Inlet: N/A")
-            print("\t Wastegate Modulation: N/A")
-            print("\t -------------------------")
-            print("\t Extras: ")
-            if p4==-1:
-                print("\t Driver pedal demand: ",p3," %")
-            else:
-                print("\t Driver pedal demand: ",p4," %")
-            print("\t Driver fuel demand: ",fu1," mg/stroke")
-            print("\t Idle fuel demand: ",fu8," mg/stroke")
-            print("\t Air Intake: ",fu3," mg/stroke")
-            print("\t Map Solution A/F: ",fu6," mg/stroke")
-            print("\t Torque Limiter: ",fu7," mg/stroke")
-            print("\t Injected fuel: ",fu4," mg/stroke")
-            print("\t Consumption (Calculated): ",fu4*rpm*(5/2)*60/1000000," kg/hora")
-            try:
-                afratio=fu3/fu4
-                print("\t A/F Ratio (Calculated): ",afratio)
-            except:
-                print("\t A/F Ratio (Calculated): inf")
-
-            # response=send_packet(b"\x02\x21\x1e",6)
-            # print "\n\n\tHex is: %s." % ":".join("{:02x}".format(ord(c)) for c in response)
-
-            # response=send_packet(b"\x02\x21\x36",6)
-            # print "\tHex is: %s." % ":".join("{:02x}".format(ord(c)) for c in response)
-
-            if (current_mode!=1):
-                if debug > 2:
-                    print ("Logging in")
-                initialize()
-                time.sleep(0.1)
-                response=send_packet(b"\x02\x21\x20",15)             #Start Diagnostics
-                current_mode=1
-
-
-            if ser:
-                ser.close()
-            input("\nPress Enter to return to menu...")
-
-        elif menu_code == 2:
-            # Show inputs
-            initialize()
-            print("| Inputs                                                                      |")
-            print("|-----------------------------------------------------------------------------|")
-            br1,br2,clutch,xfer,ccm,ccr,ccsa,accr,acfr=get_inputs()
-            time.sleep(0.1)
-            print("\t Brake 1, Brake 2: ", str(br1), " ", str(br2))
-            print("\t Clutch: ", str(clutch))
-            print("\t Transfer: ", str(xfer))
-            print("\t Gear Box: N/A Yet")
-            print("\t Cruise Control Main, Resume, Set/Accelerate: ", str(ccm), " ", str(ccr), " ", str(ccsa))
-            print("\t A/C Clutch Req: ", str(accr))
-            print("\t A/C Fan Req:  ", str(acfr))
-
-
-            if (current_mode!=2):
-                initialize()
-                time.sleep(0.1)
-                response=send_packet(b"\x02\x3e\x01",3)             #Start Inputs
-                current_mode=2
-
-
-
-
-            input("\nPress Enter to return to menu...")
-            if ser:
-                ser.close()
+        # elif menu_code == 2:
+        #
+        #     # Show inputs
+        #     initialize()
+        #     print("| Inputs                                                                      |")
+        #     print("|-----------------------------------------------------------------------------|")
+        #     br1,br2,clutch,xfer,ccm,ccr,ccsa,accr,acfr=get_inputs()
+        #     time.sleep(0.1)
+        #     print("\t Brake 1, Brake 2: ", str(br1), " ", str(br2))
+        #     print("\t Clutch: ", str(clutch))
+        #     print("\t Transfer: ", str(xfer))
+        #     print("\t Gear Box: N/A Yet")
+        #     print("\t Cruise Control Main, Resume, Set/Accelerate: ", str(ccm), " ", str(ccr), " ", str(ccsa))
+        #     print("\t A/C Clutch Req: ", str(accr))
+        #     print("\t A/C Fan Req:  ", str(acfr))
+        #
+        #
+        #     if (current_mode!=2):
+        #         initialize()
+        #         time.sleep(0.1)
+        #         response=send_packet(b"\x02\x3e\x01",3)             #Start Inputs
+        #         current_mode=2
+        #
+        #
+        #
+        #
+        #     input("\nPress Enter to return to menu...")
+        #     if ser:
+        #         ser.close()
+        if menu_code == 2:
+            show_inputs()
+        # elif menu_code == 3:
+        #     # Outputs
+        #     initialize()
+        #     print("| Outputs                                                                     |")
+        #     print("|-----------------------------------------------------------------------------|")
+        #     print("\t A: Test AC Clutch")
+        #     print("\t B: Test AC Fan")
+        #     print("\t C: Test MIL Lamp")
+        #     print("\t D: Test Fuel Pump")
+        #     print("\t E: Test Glow Plugs")
+        #     print("\t F: Test Pulse Rev Counter")
+        #     print("\t G: Test Turbo WG Modulator")
+        #     print("\t H: Test Temperature Gauge")
+        #     print("\t I: Test EGR Inlet Modulator")
+        #     print("\t J: Test Injector 1")
+        #     print("\t K: Test Injector 2")
+        #     print("\t L: Test Injector 3")
+        #     print("\t M: Test Injector 4")
+        #     print("\t N: Test Injector 5")
+        #     print("\n   Enter letter for test: ")
+        #
+        #     if (current_mode!=3):
+        #         initialize()
+        #         time.sleep(0.1)
+        #         response=send_packet(b"\x02\x3e\x01",3)             #Start outputs
+        #         current_mode=3
+        #
+        #     while(True):
+        #         time.sleep(0.1)
+        #         response=send_packet(b"\x02\x3e\x01",3)
+        #         if msvcrt.kbhit():
+        #             if (msvcrt.getch()=="a" or msvcrt.getch()=="A"):
+        #                 response=send_packet(b"\x03\x30\xa3\xff",4)
+        #                 print("\n   Testing AC Clutch")
+        #                 time.sleep(2)
+        #                 break
+        #             elif (msvcrt.getch()=="b" or msvcrt.getch()=="B"):
+        #                 response=send_packet(b"\x03\x30\xa4\xff",4)
+        #                 print("\n   Testing AC FAN")
+        #                 time.sleep(2)
+        #                 break
+        #             elif (msvcrt.getch()=="c" or msvcrt.getch()=="C"):
+        #                 response=send_packet(b"\x03\x30\xa2\xff",4)
+        #                 print("\n   Testing MIL Lamp")
+        #                 time.sleep(2)
+        #                 break
+        #             elif (msvcrt.getch()=="d" or msvcrt.getch()=="D"):
+        #                 response=send_packet(b"\x03\x30\xa1\xff",4)
+        #                 print("\n   Testing Fuel Pump")
+        #                 time.sleep(2)
+        #                 break
+        #             elif (msvcrt.getch()=="e" or msvcrt.getch()=="E"):
+        #                 response=send_packet(b"\x03\x30\xb3\xff",4)
+        #                 print("\n   Testing Glow Plugs")
+        #                 time.sleep(2)
+        #                 break
+        #             elif (msvcrt.getch()=="f" or msvcrt.getch()=="F"):
+        #                 response=send_packet(b"\x03\x30\xb7\xff",4)
+        #                 print("\n   Testing Pulse Rev Counter")
+        #                 time.sleep(2)
+        #                 break
+        #             elif (msvcrt.getch()=="g" or msvcrt.getch()=="G"):
+        #                 response=send_packet(b"\x07\x30\xbe\xff\x00\x0a\x13\x88",4)
+        #                 print("\n   Testing Turbo Wastegate Modulator")
+        #                 time.sleep(2)
+        #                 break
+        #             elif (msvcrt.getch()=="h" or msvcrt.getch()=="H"):
+        #                 response=send_packet(b"\x03\x30\xba\xff",4)
+        #                 print("\n   Testing Temperature Gauge")
+        #                 time.sleep(2)
+        #                 break
+        #             elif (msvcrt.getch()=="i" or msvcrt.getch()=="I"):
+        #                 response=send_packet(b"\x07\x30\xbd\xff\x00\xfa\x13\x88",4)
+        #                 print("\n   Testing EGR Inlet Modulator")
+        #                 time.sleep(2)
+        #                 break
+        #             elif (msvcrt.getch()=="j" or msvcrt.getch()=="J"):
+        #                 response=send_packet(b"\x03\x31\xc2\x01",4)
+        #                 print("\n   Testing Injector 1")
+        #                 time.sleep(2)
+        #                 break
+        #             elif (msvcrt.getch()=="k" or msvcrt.getch()=="K"):
+        #                 response=send_packet(b"\x03\x31\xc2\x02",4)
+        #                 print("\n   Testing Injector 2")
+        #                 time.sleep(2)
+        #                 break
+        #             elif (msvcrt.getch()=="l" or msvcrt.getch()=="L"):
+        #                 response=send_packet(b"\x03\x31\xc2\x03",4)
+        #                 print("\n   Testing Injector 3")
+        #                 time.sleep(2)
+        #                 break
+        #             elif (msvcrt.getch()=="m" or msvcrt.getch()=="M"):
+        #                 response=send_packet(b"\x03\x31\xc2\x04",4)
+        #                 print("\n   Testing Injector 4")
+        #                 time.sleep(2)
+        #                 break
+        #             elif (msvcrt.getch()=="n" or msvcrt.getch()=="N"):
+        #                 response=send_packet(b"\x03\x31\xc2\x05",4)
+        #                 print("\n   Testing Injector 5")
+        #                 time.sleep(2)
+        #                 break
+        #             entrada=msvcrt.getch()
+        #             try:
+        #                 menu_code = int(entrada)
+        #             except:
+        #                 donothing=0
+        #             time.sleep(0.1)
+        #             if (menu_code != current_mode):                     #Logout
+        #                 if(ser.isOpen()):
+        #                     response=send_packet(b"\x01\x20",3)
+        #                     response=send_packet(b"\x01\x82",3)
+        #                     ser.close()
+        #                 current_mode=0
+        #                 if debug > 2:
+        #                     print ("Logging out")
+        #                 time.sleep(logout_sleep)
+        #                 os.system("cls")
+        #                 break
+        #     input("\nPress Enter to return to menu...")
+        #     if ser:
+        #         ser.close()
         elif menu_code == 3:
             # Outputs
             initialize()
-            print("| Outputs                                                                     |")
-            print("|-----------------------------------------------------------------------------|")
-            print("\t A: Test AC Clutch")
-            print("\t B: Test AC Fan")
-            print("\t C: Test MIL Lamp")
-            print("\t D: Test Fuel Pump")
-            print("\t E: Test Glow Plugs")
-            print("\t F: Test Pulse Rev Counter")
-            print("\t G: Test Turbo WG Modulator")
-            print("\t H: Test Temperature Gauge")
-            print("\t I: Test EGR Inlet Modulator")
-            print("\t J: Test Injector 1")
-            print("\t K: Test Injector 2")
-            print("\t L: Test Injector 3")
-            print("\t M: Test Injector 4")
-            print("\t N: Test Injector 5")
-            print("\n   Enter letter for test: ")
+            current_mode = 0  # or whatever your logic needs
+            while True:
+                print("| Outputs                                                                     |")
+                print("|-----------------------------------------------------------------------------|")
+                print("\t A: Test AC Clutch")
+                print("\t B: Test AC Fan")
+                print("\t C: Test MIL Lamp")
+                print("\t D: Test Fuel Pump")
+                print("\t E: Test Glow Plugs")
+                print("\t F: Test Pulse Rev Counter")
+                print("\t G: Test Turbo WG Modulator")
+                print("\t H: Test Temperature Gauge")
+                print("\t I: Test EGR Inlet Modulator")
+                print("\t J: Test Injector 1")
+                print("\t K: Test Injector 2")
+                print("\t L: Test Injector 3")
+                print("\t M: Test Injector 4")
+                print("\t N: Test Injector 5")
+                print("\n   Enter letter for test (A-N) or just press Enter to return to main menu: ")
 
-            if (current_mode!=3):
-                initialize()
-                time.sleep(0.1)
-                response=send_packet(b"\x02\x3e\x01",3)             #Start outputs
-                current_mode=3
-
-            while(True):
-                time.sleep(0.1)
-                response=send_packet(b"\x02\x3e\x01",3)
-                if msvcrt.kbhit():
-                    if (msvcrt.getch()=="a" or msvcrt.getch()=="A"):
-                        response=send_packet(b"\x03\x30\xa3\xff",4)
-                        print("\n   Testing AC Clutch")
-                        time.sleep(2)
-                        break
-                    elif (msvcrt.getch()=="b" or msvcrt.getch()=="B"):
-                        response=send_packet(b"\x03\x30\xa4\xff",4)
-                        print("\n   Testing AC FAN")
-                        time.sleep(2)
-                        break
-                    elif (msvcrt.getch()=="c" or msvcrt.getch()=="C"):
-                        response=send_packet(b"\x03\x30\xa2\xff",4)
-                        print("\n   Testing MIL Lamp")
-                        time.sleep(2)
-                        break
-                    elif (msvcrt.getch()=="d" or msvcrt.getch()=="D"):
-                        response=send_packet(b"\x03\x30\xa1\xff",4)
-                        print("\n   Testing Fuel Pump")
-                        time.sleep(2)
-                        break
-                    elif (msvcrt.getch()=="e" or msvcrt.getch()=="E"):
-                        response=send_packet(b"\x03\x30\xb3\xff",4)
-                        print("\n   Testing Glow Plugs")
-                        time.sleep(2)
-                        break
-                    elif (msvcrt.getch()=="f" or msvcrt.getch()=="F"):
-                        response=send_packet(b"\x03\x30\xb7\xff",4)
-                        print("\n   Testing Pulse Rev Counter")
-                        time.sleep(2)
-                        break
-                    elif (msvcrt.getch()=="g" or msvcrt.getch()=="G"):
-                        response=send_packet(b"\x07\x30\xbe\xff\x00\x0a\x13\x88",4)
-                        print("\n   Testing Turbo Wastegate Modulator")
-                        time.sleep(2)
-                        break
-                    elif (msvcrt.getch()=="h" or msvcrt.getch()=="H"):
-                        response=send_packet(b"\x03\x30\xba\xff",4)
-                        print("\n   Testing Temperature Gauge")
-                        time.sleep(2)
-                        break
-                    elif (msvcrt.getch()=="i" or msvcrt.getch()=="I"):
-                        response=send_packet(b"\x07\x30\xbd\xff\x00\xfa\x13\x88",4)
-                        print("\n   Testing EGR Inlet Modulator")
-                        time.sleep(2)
-                        break
-                    elif (msvcrt.getch()=="j" or msvcrt.getch()=="J"):
-                        response=send_packet(b"\x03\x31\xc2\x01",4)
-                        print("\n   Testing Injector 1")
-                        time.sleep(2)
-                        break
-                    elif (msvcrt.getch()=="k" or msvcrt.getch()=="K"):
-                        response=send_packet(b"\x03\x31\xc2\x02",4)
-                        print("\n   Testing Injector 2")
-                        time.sleep(2)
-                        break
-                    elif (msvcrt.getch()=="l" or msvcrt.getch()=="L"):
-                        response=send_packet(b"\x03\x31\xc2\x03",4)
-                        print("\n   Testing Injector 3")
-                        time.sleep(2)
-                        break
-                    elif (msvcrt.getch()=="m" or msvcrt.getch()=="M"):
-                        response=send_packet(b"\x03\x31\xc2\x04",4)
-                        print("\n   Testing Injector 4")
-                        time.sleep(2)
-                        break
-                    elif (msvcrt.getch()=="n" or msvcrt.getch()=="N"):
-                        response=send_packet(b"\x03\x31\xc2\x05",4)
-                        print("\n   Testing Injector 5")
-                        time.sleep(2)
-                        break
-                    entrada=msvcrt.getch()
-                    try:
-                        menu_code = int(entrada)
-                    except:
-                        donothing=0
+                if current_mode != 3:
+                    initialize()
                     time.sleep(0.1)
-                    if (menu_code != current_mode):                     #Logout
-                        if(ser.isOpen()):
-                            response=send_packet(b"\x01\x20",3)
-                            response=send_packet(b"\x01\x82",3)
-                            ser.close()
-                        current_mode=0
-                        if debug > 2:
-                            print ("Logging out")
-                        time.sleep(logout_sleep)
-                        os.system("cls")
-                        break
-            input("\nPress Enter to return to menu...")
-            if ser:
-                ser.close()
+                    response = send_packet(b"\x02\x3e\x01", 3)  # Start outputs
+                    current_mode = 3
+
+                test_letter = input("Enter test letter (A-N): ").strip().lower()
+
+                test_commands = {
+                    'a': (b"\x03\x30\xa3\xff", "Testing AC Clutch"),
+                    'b': (b"\x03\x30\xa4\xff", "Testing AC FAN"),
+                    'c': (b"\x03\x30\xa2\xff", "Testing MIL Lamp"),
+                    'd': (b"\x03\x30\xa1\xff", "Testing Fuel Pump"),
+                    'e': (b"\x03\x30\xb3\xff", "Testing Glow Plugs"),
+                    'f': (b"\x03\x30\xb7\xff", "Testing Pulse Rev Counter"),
+                    'g': (b"\x07\x30\xbe\xff\x00\x0a\x13\x88", "Testing Turbo Wastegate Modulator"),
+                    'h': (b"\x03\x30\xba\xff", "Testing Temperature Gauge"),
+                    'i': (b"\x07\x30\xbd\xff\x00\xfa\x13\x88", "Testing EGR Inlet Modulator"),
+                    'j': (b"\x03\x31\xc2\x01", "Testing Injector 1"),
+                    'k': (b"\x03\x31\xc2\x02", "Testing Injector 2"),
+                    'l': (b"\x03\x31\xc2\x03", "Testing Injector 3"),
+                    'm': (b"\x03\x31\xc2\x04", "Testing Injector 4"),
+                    'n': (b"\x03\x31\xc2\x05", "Testing Injector 5"),
+                }
+
+                if not test_letter:
+                    # User pressed Enter without a letter, exit Outputs menu
+                    print("Returning to main menu...")
+                    if ser:
+                        ser.close()
+                    break
+
+                if test_letter in test_commands:
+                    cmd, desc = test_commands[test_letter]
+                    response = send_packet(cmd, 4)
+                    print("\n   " + desc)
+                    time.sleep(2)
+                else:
+                    print("\nInvalid choice, please select A-N or press Enter to return.")
+
+                # Optional: pause before redisplaying the menu
+                input("\nPress Enter to continue with another test or just Enter to return to menu...")
+                print("\n" * 2)
         elif menu_code == 4:
             # Settings
             initialize()
@@ -1034,13 +1263,12 @@ def main():
 
             print("| Faults - Refresh: 5 - Clear Faults: C                                       |")
             print("|-----------------------------------------------------------------------------|")
-
             fault_list=get_faults()
             for error in fault_list:
                 highb=(error/8)+1
                 lowb=(error%8)+1
                 try:
-                    #print "\t",error, " ",highb,"-",lowb," ",fault_code_text[error]
+                    print("\t",error, " ",highb,"-",lowb," ")
                     print("\t",error, " ",fault_code_text[error])
                 except:
                     exce1=1
