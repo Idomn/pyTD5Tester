@@ -759,20 +759,9 @@ def main():
             pb1,pb2,pb3,pb4,pb5=get_power_balance()
             fu1,fu2,fu3,fu4,fu5,fu6,fu7,fu8=get_fu()
 
-            if msvcrt.kbhit():
-                menu_code = int(msvcrt.getch())
-                time.sleep(0.1)
-                if (menu_code != current_mode):                     #Logout
-                    if(ser.isOpen()):
-                        response=send_packet(b"\x01\x20",3)
-                        response=send_packet(b"\x01\x82",3)
-                        ser.close()
-                    current_mode=0
-                    if debug > 2:
-                        print ("Logging out")
-                    time.sleep(logout_sleep)
-                    os.system("cls")
-                continueprint("| Fuelling Parameters                                                         |")
+
+
+            print("| Fuelling Parameters                                                         |")
             print("|-----------------------------------------------------------------------------|")
             print("\t Battery Voltage: ", str(b_voltage), " Volt")
             print("\t RPM: ", str(rpm))
@@ -835,35 +824,304 @@ def main():
         elif menu_code == 2:
             # Show inputs
             initialize()
-            print("\nInputs info goes here (implement get_inputs!)")
+            print("| Inputs                                                                      |")
+            print("|-----------------------------------------------------------------------------|")
+            br1,br2,clutch,xfer,ccm,ccr,ccsa,accr,acfr=get_inputs()
+            time.sleep(0.1)
+            print("\t Brake 1, Brake 2: ", str(br1), " ", str(br2))
+            print("\t Clutch: ", str(clutch))
+            print("\t Transfer: ", str(xfer))
+            print("\t Gear Box: N/A Yet")
+            print("\t Cruise Control Main, Resume, Set/Accelerate: ", str(ccm), " ", str(ccr), " ", str(ccsa))
+            print("\t A/C Clutch Req: ", str(accr))
+            print("\t A/C Fan Req:  ", str(acfr))
+
+
+            if (current_mode!=2):
+                initialize()
+                time.sleep(0.1)
+                response=send_packet(b"\x02\x3e\x01",3)             #Start Inputs
+                current_mode=2
+
+
+
+
             input("\nPress Enter to return to menu...")
-            if ser:
-                ser.close()
+                if ser:
+                    ser.close()
         elif menu_code == 3:
             # Outputs
             initialize()
-            print("\nOutputs info goes here (implement output tests!)")
+            print("| Outputs                                                                     |")
+            print("|-----------------------------------------------------------------------------|")
+            print("\t A: Test AC Clutch")
+            print("\t B: Test AC Fan")
+            print("\t C: Test MIL Lamp")
+            print("\t D: Test Fuel Pump")
+            print("\t E: Test Glow Plugs")
+            print("\t F: Test Pulse Rev Counter")
+            print("\t G: Test Turbo WG Modulator")
+            print("\t H: Test Temperature Gauge")
+            print("\t I: Test EGR Inlet Modulator")
+            print("\t J: Test Injector 1")
+            print("\t K: Test Injector 2")
+            print("\t L: Test Injector 3")
+            print("\t M: Test Injector 4")
+            print("\t N: Test Injector 5")
+            print("\n   Enter letter for test: ")
+
+            if (current_mode!=3):
+                initialize()
+                time.sleep(0.1)
+                response=send_packet(b"\x02\x3e\x01",3)             #Start outputs
+                current_mode=3
+
+            while(True):
+                time.sleep(0.1)
+                response=send_packet(b"\x02\x3e\x01",3)
+                if msvcrt.kbhit():
+                    if (msvcrt.getch()=="a" or msvcrt.getch()=="A"):
+                        response=send_packet(b"\x03\x30\xa3\xff",4)
+                        print("\n   Testing AC Clutch")
+                        time.sleep(2)
+                        break
+                    elif (msvcrt.getch()=="b" or msvcrt.getch()=="B"):
+                        response=send_packet(b"\x03\x30\xa4\xff",4)
+                        print("\n   Testing AC FAN")
+                        time.sleep(2)
+                        break
+                    elif (msvcrt.getch()=="c" or msvcrt.getch()=="C"):
+                        response=send_packet(b"\x03\x30\xa2\xff",4)
+                        print("\n   Testing MIL Lamp")
+                        time.sleep(2)
+                        break
+                    elif (msvcrt.getch()=="d" or msvcrt.getch()=="D"):
+                        response=send_packet(b"\x03\x30\xa1\xff",4)
+                        print("\n   Testing Fuel Pump")
+                        time.sleep(2)
+                        break
+                    elif (msvcrt.getch()=="e" or msvcrt.getch()=="E"):
+                        response=send_packet(b"\x03\x30\xb3\xff",4)
+                        print("\n   Testing Glow Plugs")
+                        time.sleep(2)
+                        break
+                    elif (msvcrt.getch()=="f" or msvcrt.getch()=="F"):
+                        response=send_packet(b"\x03\x30\xb7\xff",4)
+                        print("\n   Testing Pulse Rev Counter")
+                        time.sleep(2)
+                        break
+                    elif (msvcrt.getch()=="g" or msvcrt.getch()=="G"):
+                        response=send_packet(b"\x07\x30\xbe\xff\x00\x0a\x13\x88",4)
+                        print("\n   Testing Turbo Wastegate Modulator")
+                        time.sleep(2)
+                        break
+                    elif (msvcrt.getch()=="h" or msvcrt.getch()=="H"):
+                        response=send_packet(b"\x03\x30\xba\xff",4)
+                        print("\n   Testing Temperature Gauge")
+                        time.sleep(2)
+                        break
+                    elif (msvcrt.getch()=="i" or msvcrt.getch()=="I"):
+                        response=send_packet(b"\x07\x30\xbd\xff\x00\xfa\x13\x88",4)
+                        print("\n   Testing EGR Inlet Modulator")
+                        time.sleep(2)
+                        break
+                    elif (msvcrt.getch()=="j" or msvcrt.getch()=="J"):
+                        response=send_packet(b"\x03\x31\xc2\x01",4)
+                        print("\n   Testing Injector 1")
+                        time.sleep(2)
+                        break
+                    elif (msvcrt.getch()=="k" or msvcrt.getch()=="K"):
+                        response=send_packet(b"\x03\x31\xc2\x02",4)
+                        print("\n   Testing Injector 2")
+                        time.sleep(2)
+                        break
+                    elif (msvcrt.getch()=="l" or msvcrt.getch()=="L"):
+                        response=send_packet(b"\x03\x31\xc2\x03",4)
+                        print("\n   Testing Injector 3")
+                        time.sleep(2)
+                        break
+                    elif (msvcrt.getch()=="m" or msvcrt.getch()=="M"):
+                        response=send_packet(b"\x03\x31\xc2\x04",4)
+                        print("\n   Testing Injector 4")
+                        time.sleep(2)
+                        break
+                    elif (msvcrt.getch()=="n" or msvcrt.getch()=="N"):
+                        response=send_packet(b"\x03\x31\xc2\x05",4)
+                        print("\n   Testing Injector 5")
+                        time.sleep(2)
+                        break
+                    entrada=msvcrt.getch()
+                    try:
+                        menu_code = int(entrada)
+                    except:
+                        donothing=0
+                    time.sleep(0.1)
+                    if (menu_code != current_mode):                     #Logout
+                        if(ser.isOpen()):
+                            response=send_packet(b"\x01\x20",3)
+                            response=send_packet(b"\x01\x82",3)
+                            ser.close()
+                        current_mode=0
+                        if debug > 2:
+                            print ("Logging out")
+                        time.sleep(logout_sleep)
+                        os.system("cls")
+                        break
             input("\nPress Enter to return to menu...")
             if ser:
                 ser.close()
         elif menu_code == 4:
             # Settings
             initialize()
-            print("\nECU settings info goes here (implement get_setting!)")
+            print("| Settings                                                                    |")
+            print("|-----------------------------------------------------------------------------|")
+
+            if (current_mode!=4):
+                initialize()
+                time.sleep(0.1)
+                response=send_packet(b"\x02\x3e\x01",3)             #Start outputs
+                current_mode=4
+                time.sleep(0.5)
+
+            get_setting()
+
+            print("| VIN: "+VIN)
+            print("| ECU Model: "+ecu_type)
+            print("| Map Variant: "+map_variant)
+            print("| Fuel variant: "+fuel_variant)
+            print("| Homologation: "+homologation)
+
+
+            time.sleep(0.5)
+            if (menu_code != current_mode):                     #Logout
+                if(ser.isOpen()):
+                    response=send_packet(b"\x01\x20",3)
+                    response=send_packet(b"\x01\x82",3)
+                    ser.close()
+                current_mode=0
+                if debug > 2:
+                    print ("Logging out")
+                time.sleep(logout_sleep)
+                os.system("cls")
+                break
             input("\nPress Enter to return to menu...")
             if ser:
                 ser.close()
         elif menu_code == 5:
             # Faults
             initialize()
-            print("\nFault info goes here (implement get_faults!)")
+            if (current_mode!=4):
+                initialize()
+            time.sleep(0.1)
+            current_mode=4
+
+            print("| Faults - Refresh: 5 - Clear Faults: C                                       |")
+            print("|-----------------------------------------------------------------------------|")
+
+            fault_list=get_faults()
+            for error in fault_list:
+                highb=(error/8)+1
+                lowb=(error%8)+1
+                try:
+                    #print "\t",error, " ",highb,"-",lowb," ",fault_code_text[error]
+                    print("\t",error, " ",fault_code_text[error])
+                except:
+                    exce1=1
+            while(True):
+                time.sleep(1)
+                response=send_packet(b"\x02\x3e\x01",3)
+                if msvcrt.kbhit():
+                    if (msvcrt.getch()=="5"): #Refresh
+                        break
+                    if (msvcrt.getch()=="C" or msvcrt.getch()=="c"): #Clear Faults
+                        response=send_packet(b"\x14\x31\xdd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",4)
+                        print("|Clearing Faults|")
+                        break
+                    entrada=msvcrt.getch()
+                    try:
+                        menu_code = int(entrada)
+                    except:
+                        donothing=0
+                    time.sleep(0.1)
+                    if (menu_code != current_mode):                     #Logout
+                        if(ser.isOpen()):
+                            response=send_packet(b"\x01\x20",3)
+                            response=send_packet(b"\x01\x82",3)
+                            ser.close()
+                        current_mode=0
+                        if debug > 2:
+                            print ("Logging out")
+                        time.sleep(logout_sleep)
+                        os.system("cls")
+                        break
             input("\nPress Enter to return to menu...")
             if ser:
                 ser.close()
         elif menu_code == 6:
             # Map
             initialize()
-            print("\nMap read/write info goes here (implement map functions!)")
+            print("| Maps                                                                        |")
+            print("|-----------------------------------------------------------------------------|")
+            if (ecu_type!=""):
+                print("|   FLASHABLE ECU                                                             |")
+                print("|   R: Read Map    W: Write Map                                               |")
+            else:
+                print("|   NON FLASHABLE ECU                                                         |")
+            print("|-----------------------------------------------------------------------------|")
+            while (1):
+                if msvcrt.kbhit():
+                    entrada=msvcrt.getch()
+                    if (entrada.decode('latin1')=="R" or entrada.decode('latin1')=="r"): #Clear Faults
+                        print("|                                                                             |", end="\r")
+                        print("|     Reading Map - ", end="")
+                        name = input("Write filename to save: ")
+                        f=open(name, 'wb')
+
+                        initialize()
+                        time.sleep(0.2)
+                        byte1=0x11
+                        byte2=0x00
+                        byte3=0x00
+                        while (1):
+
+                            percent=((byte1-0x11)*256*256+byte2*256+byte3)/(3*256*256)
+                            address=bytes([byte1])+bytes([byte2])+bytes([byte3])
+                            print("|                                                                             |", end="\r")
+                            print("|\tReading Address: %s - %s Complete" % (binascii.b2a_hex(address),'{:.1%}'.format(percent)), end="\r")
+
+                            if (byte1==0x13 and byte2==0xff):
+                                response=send_packet(b"\x05\x23"+bytes([byte1])+bytes([byte2])+bytes([byte3])+b"\x10",20)
+                                while (len(response)<19):
+                                    response=send_packet(b"\x05\x23"+bytes([byte1])+bytes([byte2])+bytes([byte3])+b"\x10",20)
+                                f.write(response[3:19])
+                            else:
+                                response=send_packet(b"\x05\x23"+bytes([byte1])+bytes([byte2])+bytes([byte3])+b"\x40",68)
+                                while (len(response)<67):
+                                    response=send_packet(b"\x05\x23"+bytes([byte1])+bytes([byte2])+bytes([byte3])+b"\x40",68)
+                                f.write(response[3:67])
+
+                            if (byte1==0x13 and byte2==0xff and byte3==0xe0):
+                                break
+
+                            if (byte1==0x13 and byte2==0xff):
+                                byte3=byte3+0x10
+                            else:
+                                byte3=byte3+0x40
+
+                            if byte3==256:
+                                byte2=byte2+1
+                                byte3=0
+                                if byte2==256:
+                                    byte1=byte1+1
+                                    byte2=0
+
+                        f.close()
+                        break
+                    try:
+                        menu_code = int(entrada)
+                    except:
+                        donothing=0
+                time.sleep(0.1)
             input("\nPress Enter to return to menu...")
             if ser:
                 ser.close()
